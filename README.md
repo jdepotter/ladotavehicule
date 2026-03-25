@@ -118,12 +118,3 @@ If you want to contribute, open a PR against `main`. Keep the following in mind:
 ## License
 
 This project uses the license specified in the `package.json` (ISC).
-
----
-
-If you'd like, I can also:
-- Add an API route that calls Gemini and normalizes vehicle data.
-- Add a CONTRIBUTING.md and PR checklist.
-- Create a simple GitHub Actions workflow that runs linting/tests on push.
-
-If you want any of those, tell me which and I will add them.
