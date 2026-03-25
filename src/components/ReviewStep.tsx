@@ -54,7 +54,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export default function ReviewStep({
   imageDataUrl, vehicleData, onBack, onSubmit,
 }: {
-  imageDataUrl: string;
+  imageDataUrl: string | null;
   vehicleData: VehicleData | null;
   onBack: () => void;
   onSubmit: (ref: string) => void;
@@ -181,9 +181,10 @@ export default function ReviewStep({
 
   return (
     <div>
-      {lightbox && <Lightbox src={imageDataUrl} onClose={() => setLightbox(false)} />}
+      {lightbox && imageDataUrl && <Lightbox src={imageDataUrl} onClose={() => setLightbox(false)} />}
 
       {/* Image preview */}
+      {imageDataUrl ? (
       <div style={{
         borderRadius: "var(--radius-lg)", overflow: "hidden", marginBottom: 4,
         position: "relative", background: "var(--surface-0)",
@@ -236,6 +237,48 @@ export default function ReviewStep({
           </div>
         </div>
       </div>
+      ) : (
+      <div style={{
+        borderRadius: "var(--radius-lg)", marginBottom: 4,
+        padding: "14px 16px",
+        background: "var(--surface-0)", border: "1px solid var(--border)",
+        display: "flex", alignItems: "center", gap: 10,
+      }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: "var(--radius-md)", flexShrink: 0,
+          background: "var(--surface-1)", border: "1px solid var(--border)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="1" y="4" width="14" height="10" rx="2" stroke="var(--text-tertiary)" strokeWidth="1.5" />
+            <path d="M5.5 4L6.5 2H9.5L10.5 4" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" />
+            <circle cx="8" cy="9" r="2.5" stroke="var(--text-tertiary)" strokeWidth="1.5" />
+          </svg>
+        </div>
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", margin: 0 }}>No photo — manual entry</p>
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "2px 0 0" }}>Fill in all vehicle details below</p>
+        </div>
+      </div>
+      )}
+
+      {/* AI verification note */}
+      {vehicleData && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 7,
+          marginTop: 10, padding: "8px 12px",
+          borderRadius: "var(--radius-md)",
+          background: "var(--surface-1)", border: "1px solid var(--border)",
+        }}>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.6 }}>
+            <circle cx="8" cy="8" r="6.5" stroke="var(--text-tertiary)" strokeWidth="1.5" />
+            <path d="M8 7V11M8 5V5.5" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          <span style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.4 }}>
+            AI-filled — please verify details before submitting.
+          </span>
+        </div>
+      )}
 
       {/* Warnings from API */}
       {vehicleData?.warnings && vehicleData.warnings.length > 0 && (

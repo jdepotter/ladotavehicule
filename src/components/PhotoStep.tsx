@@ -56,12 +56,13 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
 export { Lightbox };
 
 export default function PhotoStep({
-  imageDataUrl, setImageBase64, setImageDataUrl, onNext, imageReady,
+  imageDataUrl, setImageBase64, setImageDataUrl, onNext, onSkip, imageReady,
 }: {
   imageDataUrl: string | null;
   setImageBase64: (b: string) => void;
   setImageDataUrl: (d: string) => void;
   onNext: () => void;
+  onSkip: () => void;
   imageReady: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -240,6 +241,28 @@ export default function PhotoStep({
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M5 3L9 7L5 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
+        </button>
+      </div>
+
+      {/* Manual entry skip */}
+      <div style={{ marginTop: 16, textAlign: "center" }}>
+        <button
+          onClick={onSkip}
+          style={{
+            background: "none", border: "none", cursor: "pointer",
+            fontSize: 13, color: "var(--text-tertiary)",
+            fontFamily: "var(--font)", padding: "8px 16px",
+            display: "inline-flex", alignItems: "center", gap: 6,
+            borderRadius: "var(--radius-md)",
+            transition: "color 0.2s var(--ease)",
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
+          onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-tertiary)"}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M11.5 1.5L14.5 4.5L5 14H2V11L11.5 1.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+          </svg>
+          Enter details manually without a photo
         </button>
       </div>
     </div>

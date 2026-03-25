@@ -107,6 +107,12 @@ export default function Home() {
     }
   };
 
+  // Skip photo — go straight to manual form entry
+  const skipToManual = () => {
+    setVehicleData(null);
+    setStep(3);
+  };
+
   return (
     <div style={{
       position: "relative", zIndex: 1, maxWidth: 520, margin: "0 auto",
@@ -194,6 +200,7 @@ export default function Home() {
             setImageBase64={setImageBase64}
             setImageDataUrl={setImageDataUrl}
             onNext={startAnalysis}
+            onSkip={skipToManual}
             imageReady={!!imageBase64}
           />
         )}
@@ -206,7 +213,7 @@ export default function Home() {
         )}
         {step === 3 && (
           <ReviewStep
-            imageDataUrl={imageDataUrl!}
+            imageDataUrl={imageDataUrl}
             vehicleData={vehicleData}
             onBack={() => setStep(1)}
             onSubmit={(ref) => { setRefNumber(ref); setStep(4); }}
