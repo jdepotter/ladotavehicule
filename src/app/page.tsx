@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import PhotoStep from "@/components/PhotoStep";
 import AnalyzeStep from "@/components/AnalyzeStep";
 import ReviewStep from "@/components/ReviewStep";
@@ -231,6 +232,16 @@ export default function Home() {
           />
         )}
       </div>
+
+      {/* Footer */}
+      <footer style={{ marginTop: 40, textAlign: "center" }}>
+        <Link href="/privacy" style={{
+          fontSize: 12, color: "var(--text-tertiary)", textDecoration: "none",
+          transition: "color 0.2s",
+        }}>
+          Privacy Policy
+        </Link>
+      </footer>
     </div>
   );
 }
