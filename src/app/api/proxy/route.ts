@@ -1,11 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { COLOR_CODES, MAKE_CODES, STYLE_CODES } from "@/lib/etimsCodes";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { logEvent } from "@/lib/logger";
 
 const ETIMS_BASE = "https://wmq1.etimspayments.com";
 
 export async function POST(req: NextRequest) {
   const start = Date.now();
   try {
+    const ip = getClientIp(req);
+    const limitError = checkRateLimit("submit", ip, {
+      perHour: 5,
+      perDay: 15,
+      globalPerMinute: 10,
+      globalPerDay: 500,
+    });
+    if (limitError) {
+      logEvent({ type: "submit", ip, success: false, status: 429, meta: { rate_limited: true } });
+      return NextResponse.json({ success: false, error: limitError }, { status: 429 });
+    }
+
     const body = await req.json();
 
     // Step 1: Get session + TokenKey
@@ -95,6 +109,21 @@ export async function POST(req: NextRequest) {
 
     const ms = Date.now() - start;
     console.log(`[submit] success=${success} plate=${body.licensePlate} street="${body.streetName}" x "${body.crossStreet}" zip=${body.zipCode} errors=${errors.length ? errors.join(";") : "none"} ${ms}ms`);
+    logEvent({
+      type: "submit",
+      ip,
+      success,
+      status: submitRes.status,
+      duration_ms: ms,
+      meta: {
+        plate: body.licensePlate,
+        state: body.plateState,
+        street: body.streetName,
+        cross: body.crossStreet,
+        zip: body.zipCode,
+        errors: errors.length ? errors : undefined,
+      },
+    });
 
     return NextResponse.json({
       success,
@@ -109,6 +138,7 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[submit] error: ${message}`);
+    logEvent({ type: "error", error: message, meta: { source: "submit" } });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

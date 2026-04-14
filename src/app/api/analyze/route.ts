@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { logEvent } from "@/lib/logger";
 
 // Valid ETIMS form values
 const COLORS = ['BEIGE','BLACK','BLUE','BROWN','COPPER','GOLD','GREEN','GREY','MAROON','ORANGE','PURPLE','RED','SILVER','TAN','TURQUOISE','UNKNOWN','WHITE','YELLOW'];
@@ -153,44 +155,21 @@ async function callGemini(apiKey: string, imageBase64: string): Promise<GeminiRe
   };
 }
 
-// ─── Abuse protection (in-memory, resets on cold start) ─────────────────────
-
-const IP_LIMIT_PER_HOUR = 10;
-const IP_LIMIT_PER_DAY = 40;
-const GLOBAL_LIMIT_PER_DAY = 2000;
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
-
-const ipHits = new Map<string, number[]>();
-let globalDay = "";
-let globalCount = 0;
-
-function checkLimits(ip: string): string | null {
-  const now = Date.now();
-  const today = new Date(now).toISOString().slice(0, 10);
-  if (today !== globalDay) { globalDay = today; globalCount = 0; }
-  if (globalCount >= GLOBAL_LIMIT_PER_DAY) return "Daily capacity reached. Try again tomorrow.";
-
-  const hits = (ipHits.get(ip) || []).filter((t) => now - t < 86_400_000);
-  const lastHour = hits.filter((t) => now - t < 3_600_000).length;
-  if (lastHour >= IP_LIMIT_PER_HOUR) return "Too many requests. Try again in an hour.";
-  if (hits.length >= IP_LIMIT_PER_DAY) return "Daily limit reached for this device.";
-
-  hits.push(now);
-  ipHits.set(ip, hits);
-  globalCount++;
-  return null;
-}
 
 // ─── Handler ────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const start = Date.now();
   try {
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim()
-      || req.headers.get("x-real-ip")
-      || "unknown";
-    const limitError = checkLimits(ip);
+    const ip = getClientIp(req);
+    const limitError = checkRateLimit("analyze", ip, {
+      perHour: 10,
+      perDay: 40,
+      globalPerDay: 2000,
+    });
     if (limitError) {
+      logEvent({ type: "analyze", ip, success: false, status: 429, meta: { rate_limited: true } });
       return NextResponse.json({ error: limitError }, { status: 429 });
     }
 
@@ -213,15 +192,37 @@ export async function POST(req: NextRequest) {
     // Step 1: Plate Recognizer
     let prResult: PlateResult | null = null;
     if (prToken) {
+      const t0 = Date.now();
       try { prResult = await callPlateRecognizer(prToken, imageBase64); }
-      catch { warnings.push("Plate Recognizer failed"); }
+      catch (e) {
+        warnings.push("Plate Recognizer failed");
+        logEvent({ type: "error", error: e instanceof Error ? e.message : String(e), meta: { source: "plate_reader" } });
+      }
+      logEvent({
+        type: "plate_reader",
+        ip,
+        success: !!prResult,
+        duration_ms: Date.now() - t0,
+        meta: { plate: prResult?.license_plate, state: prResult?.plate_state },
+      });
     }
 
     // Step 2: Gemini for color/make/style
     let geminiResult: GeminiResult | null = null;
     if (geminiKey) {
+      const t0 = Date.now();
       try { geminiResult = await callGemini(geminiKey, imageBase64); }
-      catch { warnings.push("Gemini unavailable — color/make/style may be incomplete"); }
+      catch (e) {
+        warnings.push("Gemini unavailable — color/make/style may be incomplete");
+        logEvent({ type: "error", error: e instanceof Error ? e.message : String(e), meta: { source: "gemini" } });
+      }
+      logEvent({
+        type: "gemini",
+        ip,
+        success: !!geminiResult,
+        duration_ms: Date.now() - t0,
+        meta: { color: geminiResult?.color, make: geminiResult?.make, style: geminiResult?.style },
+      });
     }
 
     // Merge
@@ -240,6 +241,13 @@ export async function POST(req: NextRequest) {
 
     const ms = Date.now() - start;
     console.log(`[analyze] plate=${plate} state=${plateState} color=${color} make=${make} sources=${sources.join("+")} ${ms}ms`);
+    logEvent({
+      type: "analyze",
+      ip,
+      success: true,
+      duration_ms: ms,
+      meta: { sources: sources.join("+") || "none", has_plate: !!plate },
+    });
 
     return NextResponse.json({
       license_plate: plate,
@@ -252,6 +260,7 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[analyze] error: ${message}`);
+    logEvent({ type: "error", error: message, meta: { source: "analyze" } });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

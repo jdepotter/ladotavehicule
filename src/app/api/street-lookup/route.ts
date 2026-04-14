@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { logEvent } from "@/lib/logger";
 
 const ETIMS_BASE = "https://wmq1.etimspayments.com";
 
@@ -64,30 +66,61 @@ async function fetchETIMS(term: string): Promise<string[]> {
 }
 
 export async function GET(req: NextRequest) {
+  const start = Date.now();
   const term = req.nextUrl.searchParams.get("term");
   if (!term || term.length < 2) {
     return NextResponse.json([]);
   }
 
-  const direction = extractDirection(term);
-  const terms = searchTerms(term);
-
-  // Try each search term until we get results
-  for (const t of terms) {
-    const results = await fetchETIMS(t);
-    if (results.length === 0) continue;
-
-    // If we have a direction, sort results to put the matching direction first
-    if (direction) {
-      results.sort((a, b) => {
-        const aHasDir = a.endsWith(` ${direction}`) ? 0 : 1;
-        const bHasDir = b.endsWith(` ${direction}`) ? 0 : 1;
-        return aHasDir - bHasDir;
-      });
-    }
-
-    return NextResponse.json(results);
+  const ip = getClientIp(req);
+  const limitError = checkRateLimit("street-lookup", ip, {
+    perHour: 120,
+    perDay: 600,
+    globalPerMinute: 60,
+    globalPerDay: 10000,
+  });
+  if (limitError) {
+    logEvent({ type: "street_lookup", ip, success: false, status: 429, meta: { rate_limited: true } });
+    return NextResponse.json({ error: limitError }, { status: 429 });
   }
 
-  return NextResponse.json([]);
+  try {
+    const direction = extractDirection(term);
+    const terms = searchTerms(term);
+
+    for (const t of terms) {
+      const results = await fetchETIMS(t);
+      if (results.length === 0) continue;
+
+      if (direction) {
+        results.sort((a, b) => {
+          const aHasDir = a.endsWith(` ${direction}`) ? 0 : 1;
+          const bHasDir = b.endsWith(` ${direction}`) ? 0 : 1;
+          return aHasDir - bHasDir;
+        });
+      }
+
+      logEvent({
+        type: "street_lookup",
+        ip,
+        success: true,
+        duration_ms: Date.now() - start,
+        meta: { term, matched: results.length },
+      });
+      return NextResponse.json(results);
+    }
+
+    logEvent({
+      type: "street_lookup",
+      ip,
+      success: true,
+      duration_ms: Date.now() - start,
+      meta: { term, matched: 0 },
+    });
+    return NextResponse.json([]);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logEvent({ type: "error", error: message, meta: { source: "street_lookup" } });
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
