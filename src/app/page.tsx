@@ -121,18 +121,6 @@ export default function Home() {
     }}>
       {/* Header */}
       <header style={{ padding: "40px 0 28px" }}>
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 6,
-          background: "var(--accent-muted)", border: "1px solid var(--accent-border)",
-          color: "var(--accent)", fontFamily: "var(--mono)", fontSize: 10,
-          fontWeight: 500, letterSpacing: "0.1em", padding: "4px 10px",
-          borderRadius: 100, textTransform: "uppercase", marginBottom: 16,
-        }}>
-          <span style={{
-            width: 5, height: 5, borderRadius: "50%", background: "var(--accent)",
-          }} />
-          LADOT Report
-        </div>
         <h1 style={{
           fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em",
           lineHeight: 1.15, color: "var(--text-primary)",

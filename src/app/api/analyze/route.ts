@@ -106,22 +106,36 @@ interface GeminiResult {
 }
 
 async function callGemini(apiKey: string, imageBase64: string): Promise<GeminiResult | null> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { inline_data: { mime_type: "image/jpeg", data: imageBase64 } },
-          { text: GEMINI_PROMPT },
-        ],
-      }],
-    }),
+  const models = ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-2.0-flash"];
+  const body = JSON.stringify({
+    contents: [{
+      parts: [
+        { inline_data: { mime_type: "image/jpeg", data: imageBase64 } },
+        { text: GEMINI_PROMPT },
+      ],
+    }],
   });
 
-  if (!res.ok) {
-    console.error(`[analyze] Gemini error: ${res.status}`);
+  let res: Response | null = null;
+  for (const model of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body },
+      );
+      if (res.ok) break;
+      // Only retry transient 5xx. 4xx (429 quota, 400 bad request, 403 auth) are terminal.
+      if (res.status < 500) break;
+      console.warn(`[analyze] Gemini ${model} ${res.status}, retry ${attempt + 1}/2`);
+      await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+    }
+    if (res?.ok) break;
+    // On 4xx (e.g. 429 quota), don't fall through to next model — same key, same quota.
+    if (res && res.status < 500) break;
+  }
+
+  if (!res || !res.ok) {
+    console.error(`[analyze] Gemini error: ${res?.status}`);
     return null;
   }
 
@@ -139,14 +153,53 @@ async function callGemini(apiKey: string, imageBase64: string): Promise<GeminiRe
   };
 }
 
+// ─── Abuse protection (in-memory, resets on cold start) ─────────────────────
+
+const IP_LIMIT_PER_HOUR = 10;
+const IP_LIMIT_PER_DAY = 40;
+const GLOBAL_LIMIT_PER_DAY = 2000;
+const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+
+const ipHits = new Map<string, number[]>();
+let globalDay = "";
+let globalCount = 0;
+
+function checkLimits(ip: string): string | null {
+  const now = Date.now();
+  const today = new Date(now).toISOString().slice(0, 10);
+  if (today !== globalDay) { globalDay = today; globalCount = 0; }
+  if (globalCount >= GLOBAL_LIMIT_PER_DAY) return "Daily capacity reached. Try again tomorrow.";
+
+  const hits = (ipHits.get(ip) || []).filter((t) => now - t < 86_400_000);
+  const lastHour = hits.filter((t) => now - t < 3_600_000).length;
+  if (lastHour >= IP_LIMIT_PER_HOUR) return "Too many requests. Try again in an hour.";
+  if (hits.length >= IP_LIMIT_PER_DAY) return "Daily limit reached for this device.";
+
+  hits.push(now);
+  ipHits.set(ip, hits);
+  globalCount++;
+  return null;
+}
+
 // ─── Handler ────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const start = Date.now();
   try {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim()
+      || req.headers.get("x-real-ip")
+      || "unknown";
+    const limitError = checkLimits(ip);
+    if (limitError) {
+      return NextResponse.json({ error: limitError }, { status: 429 });
+    }
+
     const { imageBase64 } = await req.json();
     if (!imageBase64) {
       return NextResponse.json({ error: "Image required" }, { status: 400 });
+    }
+    if (imageBase64.length > MAX_IMAGE_BYTES * 1.4) {
+      return NextResponse.json({ error: "Image too large" }, { status: 413 });
     }
 
     const prToken = process.env.PLATE_RECOGNIZER_TOKEN;
