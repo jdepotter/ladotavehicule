@@ -56,7 +56,7 @@ async function fetchETIMS(term: string): Promise<string[]> {
   try {
     const res = await fetch(
       `${ETIMS_BASE}/pbw/getAutocompleteAction.doh?term=${encodeURIComponent(term)}&client=17&lkname=hh_streets`,
-      { headers: { "User-Agent": "Mozilla/5.0" } },
+      { headers: { "User-Agent": "Mozilla/5.0" }, next: { revalidate: 86400 } },
     );
     if (!res.ok) return [];
     return await res.json();
