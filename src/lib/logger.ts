@@ -5,6 +5,7 @@ export type EventType =
   | "plate_reader"
   | "gemini"
   | "street_lookup"
+  | "geocode"
   | "submit"
   | "error";
 

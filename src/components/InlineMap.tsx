@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import mapboxgl, { Map, Marker } from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 
-const DEFAULT_CENTER: [number, number] = [34.0522, -118.2437];
+const DEFAULT_CENTER: [number, number] = [-118.2437, 34.0522]; // lon, lat
+const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
 export default function InlineMap({
   lat,
@@ -16,58 +17,53 @@ export default function InlineMap({
   onPinMove: (lat: number, lng: number) => void;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
-  const markerRef = useRef<L.Marker | null>(null);
-  // Keep a ref to always call the latest callback
+  const mapInstanceRef = useRef<Map | null>(null);
+  const markerRef = useRef<Marker | null>(null);
   const onPinMoveRef = useRef(onPinMove);
   onPinMoveRef.current = onPinMove;
 
-  const center: [number, number] = lat && lng ? [lat, lng] : DEFAULT_CENTER;
-
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
+    if (!TOKEN) {
+      console.error("[InlineMap] NEXT_PUBLIC_MAPBOX_TOKEN not set");
+      return;
+    }
+    mapboxgl.accessToken = TOKEN;
 
-    const map = L.map(mapRef.current, {
+    const center: [number, number] = lat && lng ? [lng, lat] : DEFAULT_CENTER;
+    const map = new mapboxgl.Map({
+      container: mapRef.current,
+      style: "mapbox://styles/mapbox/streets-v12",
       center,
       zoom: lat ? 17 : 14,
-      zoomControl: false,
       attributionControl: false,
     });
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
 
-    L.control.zoom({ position: "topright" }).addTo(map);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-    }).addTo(map);
-
-    const icon = L.divIcon({
-      className: "",
-      html: `<div style="
-        width: 18px; height: 18px; border-radius: 50%;
-        background: #3B82F6; border: 2.5px solid white;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-        position: relative; top: -9px; left: -9px;
-      "></div>`,
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
-    });
-
-    const marker = L.marker(center, { draggable: true, icon }).addTo(map);
+    // Custom blue dot marker matching the old Leaflet style.
+    const el = document.createElement("div");
+    el.style.cssText =
+      "width:18px;height:18px;border-radius:50%;background:#3B82F6;" +
+      "border:2.5px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);";
+    const marker = new mapboxgl.Marker({ element: el, draggable: true, anchor: "center" })
+      .setLngLat(center)
+      .addTo(map);
 
     marker.on("dragend", () => {
-      const pos = marker.getLatLng();
-      onPinMoveRef.current(pos.lat, pos.lng);
+      const { lng: mLng, lat: mLat } = marker.getLngLat();
+      onPinMoveRef.current(mLat, mLng);
     });
 
-    map.on("click", (e: L.LeafletMouseEvent) => {
-      marker.setLatLng(e.latlng);
-      onPinMoveRef.current(e.latlng.lat, e.latlng.lng);
+    map.on("click", (e) => {
+      marker.setLngLat(e.lngLat);
+      onPinMoveRef.current(e.lngLat.lat, e.lngLat.lng);
     });
 
     mapInstanceRef.current = map;
     markerRef.current = marker;
 
-    setTimeout(() => map.invalidateSize(), 100);
+    // Ensure the map sizes itself after the container paints.
+    map.once("load", () => map.resize());
 
     return () => {
       map.remove();
@@ -77,12 +73,12 @@ export default function InlineMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update marker + view when coords change externally (GPS detection)
+  // Update marker + view when coords change externally (GPS detection).
   useEffect(() => {
     if (!lat || !lng || !mapInstanceRef.current || !markerRef.current) return;
-    const pos: [number, number] = [lat, lng];
-    markerRef.current.setLatLng(pos);
-    mapInstanceRef.current.setView(pos, 17);
+    const lngLat: [number, number] = [lng, lat];
+    markerRef.current.setLngLat(lngLat);
+    mapInstanceRef.current.flyTo({ center: lngLat, zoom: 17, essential: true });
   }, [lat, lng]);
 
   return (

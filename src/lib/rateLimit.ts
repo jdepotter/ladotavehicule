@@ -45,6 +45,8 @@ export function getClientIp(req: NextRequest): string {
 }
 
 export function checkRateLimit(name: string, ip: string, limits: Limits): string | null {
+  // Never rate-limit in local dev — only production enforces caps.
+  if (process.env.NODE_ENV !== "production") return null;
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
   const b = getBucket(name);

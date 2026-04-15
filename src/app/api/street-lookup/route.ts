@@ -87,8 +87,10 @@ export async function GET(req: NextRequest) {
     const direction = extractDirection(term);
     const terms = searchTerms(term);
 
+    console.log(`[street-lookup] term="${term}" → fallback terms=${JSON.stringify(terms)}`);
     for (const t of terms) {
       const results = await fetchETIMS(t);
+      console.log(`[street-lookup]   tried "${t}" → ${results.length} results`);
       if (results.length === 0) continue;
 
       if (direction) {

@@ -22,12 +22,15 @@ export default function StreetInput({
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [originalValue, setOriginalValue] = useState("");
+  const [committed, setCommitted] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const skipFetchRef = useRef(false);
 
-  const fetchAndResolve = async (term: string) => {
+  // Fetch suggestions and record the top match as the "resolved" candidate.
+  // IMPORTANT: we never rewrite the user's typed text here — that happens only
+  // on commit (blur / Enter / Tab / click a suggestion). The submit handler
+  // uses `resolvedValue`, not the input text, as the source of truth.
+  const fetchSuggestions = async (term: string) => {
     if (term.length < 2) {
       setSuggestions([]);
       onResolved("");
@@ -39,35 +42,20 @@ export default function StreetInput({
       if (res.ok) {
         const results: string[] = await res.json();
         setSuggestions(results.slice(0, 8));
-
-        if (results.length > 0) {
-          const best = results[0];
-          onResolved(best);
-          // Replace the input value with the ETIMS value
-          if (best !== term) {
-            setOriginalValue(term);
-            skipFetchRef.current = true;
-            onChange(best);
-          }
-        } else {
-          onResolved("");
-        }
+        onResolved(results.length > 0 ? results[0] : "");
       }
     } catch { /* ignore */ }
     setLoading(false);
   };
 
   useEffect(() => {
-    // Skip fetch if we just programmatically set the value
-    if (skipFetchRef.current) {
-      skipFetchRef.current = false;
-      return;
-    }
-    // Don't re-fetch if already resolved
+    // Geocode / map pin path: parent seeded value + resolvedValue together — skip.
     if (value === resolvedValue && resolvedValue) return;
+    // Just-committed: we rewrote the input to match resolvedValue — skip.
+    if (value === committed && committed) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchAndResolve(value), 300);
+    debounceRef.current = setTimeout(() => fetchSuggestions(value), 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
@@ -82,14 +70,24 @@ export default function StreetInput({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Swap the input text to the canonical ETIMS name on commit events.
+  const commit = () => {
+    if (resolvedValue && resolvedValue !== value) {
+      setCommitted(resolvedValue);
+      onChange(resolvedValue);
+    }
+    setShowSuggestions(false);
+  };
+
   const selectSuggestion = (s: string) => {
-    skipFetchRef.current = true;
+    setCommitted(s);
     onChange(s);
     onResolved(s);
-    setOriginalValue("");
     setSuggestions([]);
     setShowSuggestions(false);
   };
+
+  const showPreview = resolvedValue && resolvedValue !== value && !loading;
 
   return (
     <div ref={wrapperRef} style={{ position: "relative" }}>
@@ -106,10 +104,17 @@ export default function StreetInput({
         onChange={(e) => {
           onChange(e.target.value);
           onResolved("");
-          setOriginalValue("");
+          setCommitted("");
           setShowSuggestions(true);
         }}
         onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+        onBlur={() => {
+          // Delay so a click on a suggestion (onMouseDown) fires first.
+          setTimeout(commit, 120);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === "Tab") commit();
+        }}
         placeholder={placeholder}
         style={{
           background: "var(--surface-1)",
@@ -120,13 +125,9 @@ export default function StreetInput({
         }}
       />
 
-      {/* Show what the original input was, so user knows what was auto-resolved */}
-      {originalValue && resolvedValue && originalValue !== resolvedValue && (
-        <div style={{
-          fontSize: 11, marginTop: 4, display: "flex", alignItems: "center", gap: 4,
-          color: "var(--text-tertiary)",
-        }}>
-          Detected: {originalValue}
+      {showPreview && (
+        <div style={{ fontSize: 11, marginTop: 4, color: "var(--text-tertiary)" }}>
+          Will be submitted as <strong>{resolvedValue}</strong>
         </div>
       )}
       {value.length >= 2 && !resolvedValue && !loading && (
@@ -140,7 +141,6 @@ export default function StreetInput({
         </div>
       )}
 
-      {/* Suggestions dropdown */}
       {showSuggestions && suggestions.length > 0 && (
         <div style={{
           position: "absolute", top: "100%", left: 0, right: 0, zIndex: 1000,
@@ -152,7 +152,8 @@ export default function StreetInput({
           {suggestions.map((s) => (
             <button
               key={s}
-              onClick={() => selectSuggestion(s)}
+              // onMouseDown fires before onBlur, so the selection lands before commit().
+              onMouseDown={(e) => { e.preventDefault(); selectSuggestion(s); }}
               style={{
                 display: "block", width: "100%", textAlign: "left",
                 padding: "10px 12px", border: "none", cursor: "pointer",

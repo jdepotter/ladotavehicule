@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, lazy, Suspense } from "react";
+import { useState, useRef, lazy, Suspense } from "react";
 import type { VehicleData } from "@/app/page";
 import { Lightbox } from "./PhotoStep";
 import StreetInput from "./StreetInput";
@@ -73,10 +73,13 @@ export default function ReviewStep({
   const [submitting, setSubmitting] = useState(false);
   const [resolvedStreet, setResolvedStreet] = useState("");
   const [resolvedCross, setResolvedCross] = useState("");
+  const [crossResolutionFailed, setCrossResolutionFailed] = useState(false);
 
   const [gpsLoading, setGpsLoading] = useState(false);
   const [mapLoading, setMapLoading] = useState(false);
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const geocodeAbortRef = useRef<AbortController | null>(null);
+  const lastGeocodedRef = useRef<{ lat: number; lng: number } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   const set = (field: string, value: string) => {
@@ -91,7 +94,7 @@ export default function ReviewStep({
       const { latitude, longitude } = pos.coords;
       setGpsCoords({ lat: latitude, lng: longitude });
       try {
-        const res = await fetch("/api/geocode", {
+        const res = await fetch(`/api/geocode${process.env.NEXT_PUBLIC_GEO_PROVIDER ? `?provider=${process.env.NEXT_PUBLIC_GEO_PROVIDER}` : ""}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ latitude, longitude }),
@@ -103,8 +106,13 @@ export default function ReviewStep({
           zipCode: data.zipCode || f.zipCode,
           blockNumber: data.blockNumber || f.blockNumber,
           streetName: data.streetName || f.streetName,
-          crossStreet: data.crossStreet || f.crossStreet,
+          // If LADOT didn't recognize the cross street, clear the field rather than
+          // pre-fill an unmatched value (which would show "Not found in LADOT").
+          crossStreet: data.crossResolved ? data.crossStreet : "",
         }));
+        if (data.streetName) setResolvedStreet(data.streetName);
+        setResolvedCross(data.crossResolved ? data.crossStreet : "");
+        setCrossResolutionFailed(!data.crossResolved);
       } catch { /* ignore */ }
       setGpsLoading(false);
     }, () => { setGpsLoading(false); }, {
@@ -401,13 +409,29 @@ export default function ReviewStep({
             lat={gpsCoords?.lat}
             lng={gpsCoords?.lng}
             onPinMove={async (lat, lng) => {
+              console.log(`[ReviewStep] onPinMove fired @ ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+              // Dedupe: same coordinates (within 1m) → skip. Client-side abort
+              // alone isn't enough because Next.js route handlers run to
+              // completion server-side even after the client disconnects.
+              const prev = lastGeocodedRef.current;
+              if (prev && Math.abs(prev.lat - lat) < 1e-5 && Math.abs(prev.lng - lng) < 1e-5) {
+                console.log(`[ReviewStep] onPinMove deduped — same coords as last geocode`);
+                return;
+              }
+              lastGeocodedRef.current = { lat, lng };
+
+              geocodeAbortRef.current?.abort();
+              const controller = new AbortController();
+              geocodeAbortRef.current = controller;
+
               setGpsCoords({ lat, lng });
               setMapLoading(true);
               try {
-                const res = await fetch("/api/geocode", {
+                const res = await fetch(`/api/geocode${process.env.NEXT_PUBLIC_GEO_PROVIDER ? `?provider=${process.env.NEXT_PUBLIC_GEO_PROVIDER}` : ""}`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ latitude: lat, longitude: lng }),
+                  signal: controller.signal,
                 });
                 const data = await res.json();
                 if (res.ok) {
@@ -416,13 +440,16 @@ export default function ReviewStep({
                     zipCode: data.zipCode || f.zipCode,
                     blockNumber: data.blockNumber || f.blockNumber,
                     streetName: data.streetName || f.streetName,
-                    crossStreet: data.crossStreet || f.crossStreet,
+                    crossStreet: data.crossResolved ? data.crossStreet : "",
                   }));
-                  setResolvedStreet("");
-                  setResolvedCross("");
+                  setResolvedStreet(data.streetName || "");
+                  setResolvedCross(data.crossResolved ? data.crossStreet : "");
+                  setCrossResolutionFailed(!data.crossResolved);
                 }
-              } catch { /* ignore */ }
-              setMapLoading(false);
+              } catch (e) {
+                if ((e as Error)?.name !== "AbortError") console.warn("[ReviewStep] geocode failed", e);
+              }
+              if (geocodeAbortRef.current === controller) setMapLoading(false);
             }}
           />
         </Suspense>
@@ -463,11 +490,25 @@ export default function ReviewStep({
             label="Nearest Cross Street"
             required
             value={form.crossStreet}
-            onChange={(v) => set("crossStreet", v)}
+            onChange={(v) => {
+              set("crossStreet", v);
+              if (crossResolutionFailed) setCrossResolutionFailed(false);
+            }}
             resolvedValue={resolvedCross}
             onResolved={setResolvedCross}
             placeholder="e.g. Manchester, 83rd"
           />
+          {crossResolutionFailed && (
+            <div style={{
+              fontSize: 11, marginTop: 6, padding: "8px 10px",
+              background: "var(--warning-muted, rgba(255,180,0,0.1))",
+              border: "1px solid var(--warning-border, rgba(255,180,0,0.3))",
+              borderRadius: "var(--radius-sm)",
+              color: "var(--warning, #b25e00)",
+            }}>
+              Cross street resolution failed — please type the nearest cross street manually.
+            </div>
+          )}
         </div>
       </div>
 
