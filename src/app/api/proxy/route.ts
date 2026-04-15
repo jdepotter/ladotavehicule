@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { COLOR_CODES, MAKE_CODES, STYLE_CODES } from "@/lib/etimsCodes";
+import { COLOR_CODES, MAKE_CODES, STYLE_CODES, ETIMS_BASE } from "@/lib/etimsCodes";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { logEvent } from "@/lib/logger";
 
-const ETIMS_BASE = "https://wmq1.etimspayments.com";
+const MAX_PLATE_LEN = 8;
+const MAX_STREET_LEN = 60;
+const MAX_COMMENTS_LEN = 500;
+function clamp(v: unknown, n: number): string {
+  return typeof v === "string" ? v.trim().slice(0, n) : "";
+}
 
 export async function POST(req: NextRequest) {
   const start = Date.now();
@@ -21,6 +26,15 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
+
+    // Input validation — reject obviously bad payloads before hitting LADOT.
+    const plate = clamp(body.licensePlate, MAX_PLATE_LEN).toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const streetName = clamp(body.streetName, MAX_STREET_LEN);
+    const crossStreet = clamp(body.crossStreet, MAX_STREET_LEN);
+    const comments = clamp(body.comments, MAX_COMMENTS_LEN);
+    if (!plate || !streetName) {
+      return NextResponse.json({ success: false, error: "Plate and street are required" }, { status: 400 });
+    }
 
     // Step 1: Get session + TokenKey
     const formPageRes = await fetch(
@@ -57,18 +71,18 @@ export async function POST(req: NextRequest) {
 
     // Step 3: POST
     const formParams = new URLSearchParams({
-      zipCode: body.zipCode || "",
-      streetNumber: body.blockNumber || "",
-      streetName: body.streetName || "",
-      crossStreetName: body.crossStreet || "",
+      zipCode: clamp(body.zipCode, 5),
+      streetNumber: clamp(body.blockNumber, 10),
+      streetName,
+      crossStreetName: crossStreet,
       vehicleColor: colorCode,
       vehicleMake: makeCode,
       vehicleStyle: styleCode,
-      licState: body.plateState || "",
-      plate: body.licensePlate || "",
+      licState: clamp(body.plateState, 2).toUpperCase(),
+      plate,
       vin: "",
-      email: body.email || "",
-      comments: body.comments || "",
+      email: clamp(body.email, 120),
+      comments,
       ...(body.previouslyReported ? { previouslyReported: "on" } : {}),
       ...(body.dwelling ? { dwelling: "Y" } : {}),
       submit: "Submit",
@@ -108,7 +122,7 @@ export async function POST(req: NextRequest) {
     const success = isThankYou && !hasForm && errors.length === 0;
 
     const ms = Date.now() - start;
-    console.log(`[submit] success=${success} plate=${body.licensePlate} street="${body.streetName}" x "${body.crossStreet}" zip=${body.zipCode} errors=${errors.length ? errors.join(";") : "none"} ${ms}ms`);
+    console.log(`[submit] success=${success} plate=${plate} street="${streetName}" x "${crossStreet}" zip=${clamp(body.zipCode, 5)} errors=${errors.length ? errors.join(";") : "none"} ${ms}ms`);
     logEvent({
       type: "submit",
       ip,
@@ -116,11 +130,11 @@ export async function POST(req: NextRequest) {
       status: submitRes.status,
       duration_ms: ms,
       meta: {
-        plate: body.licensePlate,
-        state: body.plateState,
-        street: body.streetName,
-        cross: body.crossStreet,
-        zip: body.zipCode,
+        plate,
+        state: clamp(body.plateState, 2).toUpperCase(),
+        street: streetName,
+        cross: crossStreet,
+        zip: clamp(body.zipCode, 5),
         errors: errors.length ? errors : undefined,
       },
     });

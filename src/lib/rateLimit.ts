@@ -14,7 +14,20 @@ interface Bucket {
   globalCount: number;
 }
 
+const MAX_IPS_PER_BUCKET = 5000;
 const buckets = new Map<string, Bucket>();
+
+// Evict the oldest-seen IPs when the bucket grows too large (warm instance drift).
+function evictIfNeeded(b: Bucket) {
+  if (b.ipHits.size <= MAX_IPS_PER_BUCKET) return;
+  const excess = b.ipHits.size - MAX_IPS_PER_BUCKET;
+  // Map iteration is insertion order; drop the oldest keys.
+  const it = b.ipHits.keys();
+  for (let i = 0; i < excess; i++) {
+    const k = it.next().value;
+    if (k !== undefined) b.ipHits.delete(k);
+  }
+}
 
 function getBucket(name: string): Bucket {
   let b = buckets.get(name);
@@ -54,7 +67,10 @@ export function checkRateLimit(name: string, ip: string, limits: Limits): string
   if (hits.length >= limits.perDay) return "Daily limit reached for this device.";
 
   hits.push(now);
+  // Re-insert to refresh LRU ordering (Map iterates in insertion order).
+  b.ipHits.delete(ip);
   b.ipHits.set(ip, hits);
+  evictIfNeeded(b);
   b.globalTimestamps.push(now);
   b.globalCount++;
   return null;

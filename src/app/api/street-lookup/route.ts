@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { logEvent } from "@/lib/logger";
-
-const ETIMS_BASE = "https://wmq1.etimspayments.com";
+import { ETIMS_BASE } from "@/lib/etimsCodes";
 
 const SUFFIX_MAP: Record<string, string> = {
   avenue: "AVE", street: "ST", boulevard: "BLVD", drive: "DR", place: "PL",

@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { logEvent } from "@/lib/logger";
+import { COLORS, MAKES, STYLES, US_STATES } from "@/lib/etimsCodes";
 
-// Valid ETIMS form values
-const COLORS = ['BEIGE','BLACK','BLUE','BROWN','COPPER','GOLD','GREEN','GREY','MAROON','ORANGE','PURPLE','RED','SILVER','TAN','TURQUOISE','UNKNOWN','WHITE','YELLOW'];
-const MAKES = ['ACURA','ALFA ROMEO','ASTON MARTIN','AUBURN','AUDI','AUSTIN HEALY','AVANTI','BENTLEY','BMW','BUGATTI','BUICK','CADILLAC','CHECKER','CHEVROLET','CHRYSLER','CITROEN','CUSHMAN','DAEWOO','DAIHATSU','DATSUN','DODGE','DUESENBERG','EAGLE','FERRARI','FIAT','FORD','FREIGHTLINER','GENERAL MOTORS','GEO','GRUMMAN','HARLEY-DAVIDSON','HONDA','HUMMER','HYUNDAI','INDIAN','INFINITI','INTERNATIONAL','ISUZU','IVECCO','JAGUAR','JEEP','JENSEN','KAWASAKI','KENWORTH','KIA','LAMBORGHINI','LANCIA','LAND ROVER','LEXUS','LINCOLN','MACK','MASERATI','MAZDA','MERCEDES BENZ','MERCURY','MERKUR','MINI COOPER','MITSUBISHI','NISSAN','OLDSMOBILE','OTHER','PACKARD','PETERBILT','PEUGOT','PLYMOUTH','PONTIAC','PORSCHE','RANGE ROVER','RENAULT','REO','ROLLS ROYCE','SAAB','SATURN','SPECIAL CONSTRUCTION','STERLING','STUDEBAKER','SUBARU','SUZUKI','TESLA','TOYOTA','TRIUMPH','VOLKSWAGEN','VOLVO','WHITE / UTILITY','WINNEBAGO','YAMAHA'];
-const STYLES = ['BOAT ON TRAILER','BUS','COMMERCIAL','LIMOUSINE','MOTOR CYCLE','MOTOR HOME','PASSENGER CAR','PICK-UP TRUCK','TRAILER','TRUCK','VAN'];
-const STATES_ABBR = ['AL','AK','AZ','AR','CA','CO','CT','DC','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','MA','MD','ME','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
+// Warn once at module load if keys are missing so misconfigs don't fail silently.
+if (!process.env.PLATE_RECOGNIZER_TOKEN) console.warn("[analyze] PLATE_RECOGNIZER_TOKEN not set");
+if (!process.env.GEMINI_API_KEY) console.warn("[analyze] GEMINI_API_KEY not set");
 
 const STYLE_MAP: Record<string, string> = {
   sedan: "PASSENGER CAR", coupe: "PASSENGER CAR", hatchback: "PASSENGER CAR",
@@ -23,11 +22,14 @@ function matchClosest(value: string, options: string[]): string {
   const upper = value.toUpperCase().trim();
   const exact = options.find((o) => o === upper);
   if (exact) return exact;
-  const contains = options.find((o) => upper.includes(o) || o.includes(upper));
-  if (contains) return contains;
+  // Require ≥3 chars for substring matches to avoid spurious hits (e.g. "VAN" in "CARAVAN").
+  if (upper.length >= 3) {
+    const contains = options.find((o) => o === upper || o.split(/\s+/).includes(upper));
+    if (contains) return contains;
+  }
   if (upper === "SUV") return "PASSENGER CAR";
-  const words = upper.split(/\s+/);
-  const partial = options.find((o) => words.some((w) => w.length > 2 && o.includes(w)));
+  const words = upper.split(/\s+/).filter((w) => w.length >= 3);
+  const partial = options.find((o) => words.some((w) => o.split(/\s+/).includes(w)));
   if (partial) return partial;
   return options.includes("OTHER") ? "OTHER" : options.includes("UNKNOWN") ? "UNKNOWN" : options[0];
 }
@@ -35,7 +37,7 @@ function matchClosest(value: string, options: string[]): string {
 function validateState(state: string | null | undefined): string | null {
   if (!state) return null;
   const upper = state.toUpperCase().trim().replace("US-", "");
-  return STATES_ABBR.includes(upper) ? upper : null;
+  return US_STATES.includes(upper) ? upper : null;
 }
 
 // ─── Plate Recognizer ───────────────────────────────────────────────────────
@@ -108,7 +110,8 @@ interface GeminiResult {
 }
 
 async function callGemini(apiKey: string, imageBase64: string): Promise<GeminiResult | null> {
-  const models = ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-2.0-flash"];
+  const models = (process.env.GEMINI_MODELS?.split(",").map((m) => m.trim()).filter(Boolean))
+    || ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-2.0-flash"];
   const body = JSON.stringify({
     contents: [{
       parts: [
@@ -173,8 +176,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: limitError }, { status: 429 });
     }
 
+    // Reject oversized payloads before parsing (image b64 + JSON overhead).
+    const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
+    if (contentLength > MAX_IMAGE_BYTES * 1.5) {
+      return NextResponse.json({ error: "Image too large" }, { status: 413 });
+    }
+
     const { imageBase64 } = await req.json();
-    if (!imageBase64) {
+    if (typeof imageBase64 !== "string" || !imageBase64) {
       return NextResponse.json({ error: "Image required" }, { status: 400 });
     }
     if (imageBase64.length > MAX_IMAGE_BYTES * 1.4) {

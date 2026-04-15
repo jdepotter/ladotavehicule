@@ -1,6 +1,15 @@
 // ETIMS form value codes — extracted from the actual LADOT complaint form HTML.
 // The form uses short codes as <option value="XX">, not display text.
 
+export const ETIMS_BASE = "https://wmq1.etimspayments.com";
+
+export const US_STATES = [
+  "AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","ID","IL","IN",
+  "IA","KS","KY","LA","MA","MD","ME","MI","MN","MS","MO","MT","NE","NV","NH",
+  "NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT",
+  "VT","VA","WA","WV","WI","WY",
+];
+
 export const COLOR_CODES: Record<string, string> = {
   BEIGE: "BG", BLACK: "BK", BLUE: "BL", BROWN: "BN", COPPER: "CO",
   GOLD: "GO", GREEN: "GN", GREY: "GY", MAROON: "MR", ORANGE: "OR",
@@ -38,3 +47,8 @@ export const STYLE_CODES: Record<string, string> = {
   "MOTOR CYCLE": "MC", "MOTOR HOME": "MH", "PASSENGER CAR": "PA",
   "PICK-UP TRUCK": "PU", TRAILER: "TR", TRUCK: "TK", VAN: "VN",
 };
+
+// Display name lists (derived from code maps — single source of truth).
+export const COLORS = Object.keys(COLOR_CODES).sort();
+export const MAKES = Object.keys(MAKE_CODES).sort();
+export const STYLES = Object.keys(STYLE_CODES).sort();

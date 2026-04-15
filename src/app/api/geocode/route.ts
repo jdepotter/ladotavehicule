@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 async function reverseGeocode(lat: number, lon: number) {
   const res = await fetch(
     `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`,
-    { headers: { "User-Agent": "LADOT-Reporter/1.0" } },
+    { headers: { "User-Agent": "LADOT-Reporter/1.0" }, signal: AbortSignal.timeout(4000) },
   );
   if (!res.ok) return null;
   return res.json();
@@ -20,7 +20,7 @@ async function findCrossStreet(lat: number, lon: number, mainStreet: string): Pr
   const escaped = mainStreet.replace(/"/g, '\\"');
 
   const query = `
-    [out:json][timeout:15];
+    [out:json][timeout:5];
     way(around:500,${lat},${lon})["highway"]["name"="${escaped}"]->.mystreet;
     node(w.mystreet)->.mynodes;
     way(bn.mynodes)["highway"]["name"]->.crossing;
@@ -35,6 +35,7 @@ async function findCrossStreet(lat: number, lon: number, mainStreet: string): Pr
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: `data=${encodeURIComponent(query)}`,
+      signal: AbortSignal.timeout(6000),
     });
     if (!res.ok) return null;
     const data = await res.json();
