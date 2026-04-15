@@ -222,13 +222,24 @@ export default function Home() {
       </div>
 
       {/* Footer */}
-      <footer style={{ marginTop: 40, textAlign: "center" }}>
+      <footer style={{ marginTop: 40, textAlign: "center", display: "flex", flexDirection: "column", gap: 6 }}>
         <Link href="/privacy" style={{
           fontSize: 12, color: "var(--text-tertiary)", textDecoration: "none",
           transition: "color 0.2s",
         }}>
           Privacy Policy
         </Link>
+        <a
+          href="https://prdwmq.etimspayments.com/pbw/include/la/complaintform.jsp?complainttype=1"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            fontSize: 12, color: "var(--text-tertiary)", textDecoration: "none",
+            transition: "color 0.2s",
+          }}
+        >
+          Original LADOT form ↗
+        </a>
       </footer>
     </div>
   );

@@ -1,5 +1,33 @@
 import { ETIMS_BASE } from "./etimsCodes";
 
+// Normalize a street name so variants match across data sources
+// (Nominatim vs OSM/Mapbox vs LADOT). Lowercase, strip punctuation, strip
+// leading directional, expand trailing suffix to canonical long form.
+const SUFFIX_EXPAND: Record<string, string> = {
+  ave: "avenue", avenue: "avenue",
+  blvd: "boulevard", boulevard: "boulevard",
+  st: "street", street: "street",
+  dr: "drive", drive: "drive",
+  rd: "road", road: "road",
+  ln: "lane", lane: "lane",
+  ct: "court", court: "court",
+  pl: "place", place: "place",
+  pkwy: "parkway", parkway: "parkway",
+  ter: "terrace", terrace: "terrace",
+  cir: "circle", circle: "circle",
+  way: "way",
+};
+
+export function normalizeStreetName(name: string): string {
+  const tokens = name.toLowerCase().replace(/[.,]/g, "").split(/\s+/).filter(Boolean);
+  while (tokens.length && /^(n|s|e|w|north|south|east|west)$/.test(tokens[0])) tokens.shift();
+  if (tokens.length) {
+    const last = tokens[tokens.length - 1];
+    if (SUFFIX_EXPAND[last]) tokens[tokens.length - 1] = SUFFIX_EXPAND[last];
+  }
+  return tokens.join(" ");
+}
+
 const SUFFIX_MAP: Record<string, string> = {
   avenue: "AVE", street: "ST", boulevard: "BLVD", drive: "DR", place: "PL",
   court: "CT", lane: "LN", road: "RD", way: "WAY", circle: "CIR",

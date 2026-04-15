@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { logEvent } from "@/lib/logger";
-import { lookupStreet } from "@/lib/streetLookup";
+import { lookupStreet, normalizeStreetName } from "@/lib/streetLookup";
 
 if (!process.env.MAPBOX_TOKEN) console.warn("[geocode] MAPBOX_TOKEN not set — cross-street detection will fail");
 
@@ -109,31 +109,6 @@ function pointToSegmentMeters(plat: number, plon: number, alat: number, alon: nu
   return Math.hypot(px - cx, py - cy);
 }
 
-// Normalize a street name so Nominatim and OSM/Mapbox variants match:
-// lowercase, strip punctuation, strip leading directional, expand trailing suffix.
-const SUFFIX_EXPAND: Record<string, string> = {
-  ave: "avenue", avenue: "avenue",
-  blvd: "boulevard", boulevard: "boulevard",
-  st: "street", street: "street",
-  dr: "drive", drive: "drive",
-  rd: "road", road: "road",
-  ln: "lane", lane: "lane",
-  ct: "court", court: "court",
-  pl: "place", place: "place",
-  pkwy: "parkway", parkway: "parkway",
-  ter: "terrace", terrace: "terrace",
-  cir: "circle", circle: "circle",
-  way: "way",
-};
-function normalizeStreetName(name: string): string {
-  const tokens = name.toLowerCase().replace(/[.,]/g, "").split(/\s+/).filter(Boolean);
-  while (tokens.length && /^(n|s|e|w|north|south|east|west)$/.test(tokens[0])) tokens.shift();
-  if (tokens.length) {
-    const last = tokens[tokens.length - 1];
-    if (SUFFIX_EXPAND[last]) tokens[tokens.length - 1] = SUFFIX_EXPAND[last];
-  }
-  return tokens.join(" ");
-}
 
 // Segment-segment intersection in lon/lat (fine at street scale); returns crossing point or null.
 function segIntersect(
@@ -199,49 +174,19 @@ async function findCrossStreetMapbox(lat: number, lon: number, mainStreet: strin
   const ranked = [...nearestToPinByName.entries()].sort((a, b) => a[1] - b[1]);
   console.log(`[geocode] Nearby streets: ${ranked.slice(0, 6).map(([n, d]) => `${n} (${Math.round(d)}m)`).join(", ")}`);
 
-  // Main street = the feature the pin sits on (closest vertex to pin).
-  // Nominatim and Mapbox disagree on suffix spelling ("Airport Boulevard" vs "Airport Blvd"),
-  // so compare normalized forms: lowercase, strip punctuation, expand suffixes, strip directions.
-  const SUFFIX_EXPAND: Record<string, string> = {
-    ave: "avenue", avenue: "avenue",
-    blvd: "boulevard", boulevard: "boulevard",
-    st: "street", street: "street",
-    dr: "drive", drive: "drive",
-    rd: "road", road: "road",
-    ln: "lane", lane: "lane",
-    ct: "court", court: "court",
-    pl: "place", place: "place",
-    pkwy: "parkway", parkway: "parkway",
-    ter: "terrace", terrace: "terrace",
-    cir: "circle", circle: "circle",
-    way: "way",
-  };
-  const normalize = (name: string): string => {
-    const tokens = name.toLowerCase().replace(/[.,]/g, "").split(/\s+/).filter(Boolean);
-    // Strip leading directionals.
-    while (tokens.length && /^(n|s|e|w|north|south|east|west)$/.test(tokens[0])) tokens.shift();
-    // Expand trailing suffix.
-    if (tokens.length) {
-      const last = tokens[tokens.length - 1];
-      if (SUFFIX_EXPAND[last]) tokens[tokens.length - 1] = SUFFIX_EXPAND[last];
-    }
-    return tokens.join(" ");
-  };
-
-  const mainNominatimNorm = normalize(mainStreet);
-
-  // Prefer Nominatim's street if it appears in the Mapbox features — Nominatim is
-  // authoritative about which road the pin sits on. Fall back to closest-by-distance
-  // only when Nominatim's name isn't present (e.g. name mismatch, or Nominatim failed).
-  let mainName = ranked[0][0]; // default: closest
+  // Main street = the feature the pin sits on. Nominatim is authoritative on
+  // which road the pin sits on, so prefer its name when it matches any Mapbox
+  // candidate (normalized — handles "Airport Boulevard" vs "Airport Blvd").
+  const mainNominatimNorm = normalizeStreetName(mainStreet);
+  let mainName = ranked[0][0];
   if (mainNominatimNorm) {
-    const nominatimMatch = ranked.find(([n]) => normalize(n) === mainNominatimNorm);
+    const nominatimMatch = ranked.find(([n]) => normalizeStreetName(n) === mainNominatimNorm);
     if (nominatimMatch) mainName = nominatimMatch[0];
   }
 
-  const mainNameNorm = normalize(mainName);
+  const mainNameNorm = normalizeStreetName(mainName);
   const isMainName = (name: string) => {
-    const n = normalize(name);
+    const n = normalizeStreetName(name);
     return n === mainNameNorm || n === mainNominatimNorm;
   };
   const mainLines = linesByName.get(mainName) ?? [];
