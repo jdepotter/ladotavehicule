@@ -33,7 +33,7 @@ function getClient(): SupabaseClient | null {
 export function logEvent(payload: EventPayload): void {
   const c = getClient();
   if (!c) return;
-  c.from("events").insert({
+  c.schema("private").from("events").insert({
     type: payload.type,
     ip: payload.ip ?? null,
     success: payload.success ?? null,
