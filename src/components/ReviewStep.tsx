@@ -122,9 +122,12 @@ export default function ReviewStep({
     });
   };
 
+  const ALREADY_REPORTED_ERROR = "Plate already has Abandon vehicle record.";
+
   const handleSubmit = async () => {
     setFormError(null);
     const required: [string, string][] = [
+      ["licensePlate", "License Plate"], ["plateState", "Plate State"],
       ["vehicleColor", "Color"], ["vehicleMake", "Make"], ["vehicleStyle", "Style"],
       ["zipCode", "Zip Code"], ["blockNumber", "Block Number"],
       ["streetName", "Street Name"], ["crossStreet", "Cross Street"],
@@ -156,13 +159,20 @@ export default function ReviewStep({
         }),
       });
       const data = await res.json();
+
       if (data.success) {
         onSubmit("SUBMITTED");
-      } else {
-        setFormError(data.message || "Submission failed");
-        if (!data.errors?.length) {
-          onSubmit("PENDING");
-        }
+        return;
+      }
+
+      if (Array.isArray(data.errors) && data.errors.includes(ALREADY_REPORTED_ERROR)) {
+        onSubmit("ALREADY_REPORTED");
+        return;
+      }
+
+      setFormError(data.message || data.error || "Submission failed");
+      if (res.ok && !data.errors?.length) {
+        onSubmit("PENDING");
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -332,6 +342,7 @@ export default function ReviewStep({
         />
         <ComboBox
           label="Plate State"
+          required
           value={form.plateState}
           onChange={(v) => set("plateState", v)}
           options={STATES}
@@ -341,6 +352,7 @@ export default function ReviewStep({
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={labelStyle}>
             License Plate
+            <span style={{ color: "var(--error)", fontSize: 10 }}>*</span>
             {aiFilled.plate && <AiBadge />}
             {aiFilled.plate && vehicleData?.plate_confidence && (
               <span style={{
@@ -588,6 +600,7 @@ export default function ReviewStep({
           {formError}
         </div>
       )}
+
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 10, marginTop: 28 }}>

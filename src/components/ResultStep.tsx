@@ -15,6 +15,8 @@ export default function ResultStep({
     return () => clearTimeout(t);
   }, []);
 
+  const alreadyReported = refNumber === "ALREADY_REPORTED";
+
   return (
     <div>
       <div className="glass" style={{
@@ -50,13 +52,15 @@ export default function ResultStep({
           fontSize: 22, fontWeight: 700, color: "var(--text-primary)",
           marginBottom: 8, letterSpacing: "-0.02em",
         }}>
-          Report Submitted
+          {alreadyReported ? "Already on File" : "Report Submitted"}
         </h2>
         <p style={{
           fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6,
           maxWidth: 320, margin: "0 auto",
         }}>
-          Your abandoned vehicle report has been sent to LADOT via their complaint form.
+          {alreadyReported
+            ? "This vehicle is already in LADOT's system from a prior report. No new report needed."
+            : "Your abandoned vehicle report has been sent to LADOT via their complaint form."}
         </p>
 
         {/* Status */}
@@ -76,7 +80,13 @@ export default function ResultStep({
             color: refNumber === "PENDING" ? "var(--warning)" : "var(--success)",
             letterSpacing: "0.04em",
           }}>
-            {refNumber === "PENDING" ? "Sent — confirmation unclear" : refNumber === "SUBMITTED" ? "Successfully submitted" : `Ref: ${refNumber}`}
+            {alreadyReported
+              ? "Already on file with LADOT"
+              : refNumber === "PENDING"
+                ? "Sent — confirmation unclear"
+                : refNumber === "SUBMITTED"
+                  ? "Successfully submitted"
+                  : `Ref: ${refNumber}`}
           </div>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>
             LADOT does not provide a tracking number for online reports.

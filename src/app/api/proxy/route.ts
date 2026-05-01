@@ -22,7 +22,10 @@ export async function POST(req: NextRequest) {
     });
     if (limitError) {
       logEvent({ type: "submit", ip, success: false, status: 429, meta: { rate_limited: true } });
-      return NextResponse.json({ success: false, error: limitError }, { status: 429 });
+      return NextResponse.json(
+        { success: false, message: limitError, errors: [limitError] },
+        { status: 429 },
+      );
     }
 
     const body = await req.json();
@@ -33,7 +36,11 @@ export async function POST(req: NextRequest) {
     const crossStreet = clamp(body.crossStreet, MAX_STREET_LEN);
     const comments = clamp(body.comments, MAX_COMMENTS_LEN);
     if (!plate || !streetName) {
-      return NextResponse.json({ success: false, error: "Plate and street are required" }, { status: 400 });
+      const msg = "Plate and street are required";
+      return NextResponse.json(
+        { success: false, message: msg, errors: [msg] },
+        { status: 400 },
+      );
     }
 
     // Step 1: Get session + TokenKey
@@ -153,6 +160,9 @@ export async function POST(req: NextRequest) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[submit] error: ${message}`);
     logEvent({ type: "error", error: message, meta: { source: "submit" } });
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, message, errors: [message] },
+      { status: 500 },
+    );
   }
 }
