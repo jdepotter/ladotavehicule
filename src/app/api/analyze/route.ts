@@ -212,7 +212,7 @@ export async function POST(req: NextRequest) {
         ip,
         success: !!prResult,
         duration_ms: Date.now() - t0,
-        meta: { plate: prResult?.license_plate, state: prResult?.plate_state },
+        meta: { has_plate: !!prResult?.license_plate, state: prResult?.plate_state },
       });
     }
 
@@ -249,7 +249,7 @@ export async function POST(req: NextRequest) {
     if (geminiResult) sources.push("gemini");
 
     const ms = Date.now() - start;
-    console.log(`[analyze] plate=${plate} state=${plateState} color=${color} make=${make} sources=${sources.join("+")} ${ms}ms`);
+    console.log(`[analyze] has_plate=${!!plate} state=${plateState} color=${color} make=${make} sources=${sources.join("+")} ${ms}ms`);
     logEvent({
       type: "analyze",
       ip,

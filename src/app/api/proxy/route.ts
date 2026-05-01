@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
     const success = isThankYou && !hasForm && errors.length === 0;
 
     const ms = Date.now() - start;
-    console.log(`[submit] success=${success} plate=${plate} street="${streetName}" x "${crossStreet}" zip=${clamp(body.zipCode, 5)} errors=${errors.length ? errors.join(";") : "none"} ${ms}ms`);
+    console.log(`[submit] success=${success} street="${streetName}" x "${crossStreet}" zip=${clamp(body.zipCode, 5)} errors=${errors.length ? errors.join(";") : "none"} ${ms}ms`);
     logEvent({
       type: "submit",
       ip,
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
       status: submitRes.status,
       duration_ms: ms,
       meta: {
-        plate,
+        has_plate: !!plate,
         state: clamp(body.plateState, 2).toUpperCase(),
         street: streetName,
         cross: crossStreet,
