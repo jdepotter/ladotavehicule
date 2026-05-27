@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { after } from "next/server";
 
 export type EventType =
   | "analyze"
@@ -29,19 +30,23 @@ function getClient(): SupabaseClient | null {
   return client;
 }
 
-// Fire-and-forget: never blocks the caller, never throws.
+// Defer the insert until after the response is sent. On Netlify/Lambda this
+// keeps the function alive long enough for the HTTPS call to complete —
+// without `after()`, the runtime freezes mid-fetch and undici later throws
+// "TypeError: fetch failed" when the container is thawed for another request.
 export function logEvent(payload: EventPayload): void {
   const c = getClient();
   if (!c) return;
-  c.schema("private").from("events").insert({
-    type: payload.type,
-    ip: payload.ip ?? null,
-    success: payload.success ?? null,
-    status: payload.status ?? null,
-    duration_ms: payload.duration_ms ?? null,
-    meta: payload.meta ?? null,
-    error: payload.error ?? null,
-  }).then(({ error }) => {
+  after(async () => {
+    const { error } = await c.schema("private").from("events").insert({
+      type: payload.type,
+      ip: payload.ip ?? null,
+      success: payload.success ?? null,
+      status: payload.status ?? null,
+      duration_ms: payload.duration_ms ?? null,
+      meta: payload.meta ?? null,
+      error: payload.error ?? null,
+    });
     if (error) console.error(`[logger] insert failed: ${error.message}`);
   });
 }

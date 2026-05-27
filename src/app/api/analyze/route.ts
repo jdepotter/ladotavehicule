@@ -111,7 +111,7 @@ interface GeminiResult {
 
 async function callGemini(apiKey: string, imageBase64: string): Promise<GeminiResult | null> {
   const models = (process.env.GEMINI_MODELS?.split(",").map((m) => m.trim()).filter(Boolean))
-    || ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-2.0-flash"];
+    || ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"];
   const body = JSON.stringify({
     contents: [{
       parts: [
@@ -129,14 +129,15 @@ async function callGemini(apiKey: string, imageBase64: string): Promise<GeminiRe
         { method: "POST", headers: { "Content-Type": "application/json" }, body },
       );
       if (res.ok) break;
-      // Only retry transient 5xx. 4xx (429 quota, 400 bad request, 403 auth) are terminal.
+      // Only retry transient 5xx. 4xx are terminal for THIS model.
       if (res.status < 500) break;
       console.warn(`[analyze] Gemini ${model} ${res.status}, retry ${attempt + 1}/2`);
       await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
     }
     if (res?.ok) break;
-    // On 4xx (e.g. 429 quota), don't fall through to next model — same key, same quota.
-    if (res && res.status < 500) break;
+    // 404 (model not found) and 400 (bad request) → try next model.
+    // 429 (quota) and 403 (auth) are key-level, so abort the chain.
+    if (res && (res.status === 429 || res.status === 403)) break;
   }
 
   if (!res || !res.ok) {
