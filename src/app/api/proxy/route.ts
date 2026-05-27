@@ -3,6 +3,7 @@ import { COLOR_CODES, MAKE_CODES, STYLE_CODES, ETIMS_BASE } from "@/lib/etimsCod
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { logEvent } from "@/lib/logger";
 
+const MIN_PLATE_LEN = 2;
 const MAX_PLATE_LEN = 8;
 const MAX_STREET_LEN = 60;
 const MAX_COMMENTS_LEN = 500;
@@ -37,6 +38,13 @@ export async function POST(req: NextRequest) {
     const comments = clamp(body.comments, MAX_COMMENTS_LEN);
     if (!plate || !streetName) {
       const msg = "Plate and street are required";
+      return NextResponse.json(
+        { success: false, message: msg, errors: [msg] },
+        { status: 400 },
+      );
+    }
+    if (plate.length < MIN_PLATE_LEN) {
+      const msg = `License plate must be at least ${MIN_PLATE_LEN} letters or numbers`;
       return NextResponse.json(
         { success: false, message: msg, errors: [msg] },
         { status: 400 },
